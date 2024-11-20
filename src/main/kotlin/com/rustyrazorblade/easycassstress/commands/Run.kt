@@ -3,6 +3,7 @@ package com.rustyrazorblade.easycassstress.commands
 import com.beust.jcommander.DynamicParameter
 import com.beust.jcommander.Parameter
 import com.beust.jcommander.Parameters
+import com.beust.jcommander.ParametersDelegate
 import com.beust.jcommander.converters.IParameterSplitter
 import com.codahale.metrics.MetricRegistry
 import com.codahale.metrics.ScheduledReporter
@@ -15,10 +16,11 @@ import com.google.common.util.concurrent.RateLimiter
 import com.rustyrazorblade.easycassstress.*
 import com.rustyrazorblade.easycassstress.Metrics
 import com.rustyrazorblade.easycassstress.converters.ConsistencyLevelConverter
-import  com.rustyrazorblade.easycassstress.converters.HumanReadableConverter
-import  com.rustyrazorblade.easycassstress.converters.HumanReadableTimeConverter
-import  com.rustyrazorblade.easycassstress.generators.ParsedFieldFunction
-import  com.rustyrazorblade.easycassstress.generators.Registry
+import com.rustyrazorblade.easycassstress.converters.HumanReadableConverter
+import com.rustyrazorblade.easycassstress.converters.HumanReadableTimeConverter
+import com.rustyrazorblade.easycassstress.delegates.PopulateOptions
+import com.rustyrazorblade.easycassstress.generators.ParsedFieldFunction
+import com.rustyrazorblade.easycassstress.generators.Registry
 import me.tongfei.progressbar.ProgressBar
 import me.tongfei.progressbar.ProgressBarStyle
 import org.apache.logging.log4j.kotlin.logger
@@ -186,6 +188,9 @@ class Run(val command: String) : IStressCommand {
     @Parameter(names = ["--hdr"], description = "Print HDR Histograms using this prefix")
     var hdrHistogramPrefix = ""
 
+    @ParametersDelegate
+    var populateRate = PopulateOptions()
+
     /**
      * Lazily generate query options
      */
@@ -293,12 +298,12 @@ class Run(val command: String) : IStressCommand {
         val metrics = createMetrics()
 
         // set up the rate limiter optimizer and put it on a schedule
-        var optimizer = RateLimiterOptimizer(rateLimiter, metrics, maxReadLatency, maxWriteLatency)
-        optimizer.reset()
+        // var optimizer = RateLimiterOptimizer(rateLimiter, metrics, maxReadLatency, maxWriteLatency)
+        // optimizer.reset()
 
-        val timer = Timer().schedule(10000, 5000) {
-            optimizer.execute()
-        }
+        // val timer = Timer().schedule(10000, 5000) {
+        //     optimizer.execute()
+        // }
 
         var runnersExecuted = 0L
 
@@ -306,12 +311,17 @@ class Run(val command: String) : IStressCommand {
             // run the prepare for each
             val runners = createRunners(plugin, metrics, fieldRegistry, rateLimiter)
 
+            rateLimiter.rate = populateRate.rate
+
             populateData(plugin, runners, metrics)
+
+            rateLimiter.rate = rate.toDouble()
+
             metrics.resetErrors()
 
             // since the populate workload is going to be substantially different
             // from the test workload, we need to reset the optimizer
-            optimizer.reset()
+            // optimizer.reset()
 
             metrics.startReporting()
             println("Prometheus metrics are available at http://localhost:$prometheusPort/")
@@ -349,7 +359,6 @@ class Run(val command: String) : IStressCommand {
                     entry.first.outputPercentileDistribution(PrintStream(fp), 1_000_000.0)
                 }
             }
-
         } catch (e: Exception) {
             println("There was an error with easy-cass-stress.  Please file a bug at https://github.com/rustyrazorblade/easy-cass-stress and report the following exception:\n $e")
             throw e
